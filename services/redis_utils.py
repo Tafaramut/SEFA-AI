@@ -21,9 +21,9 @@ class RedisService:
         """
         try:
             self.redis_client = redis.Redis(
-                host=os.getenv('_REDIS_HOST', 'localhost'),
-                port=int(os.getenv('_REDIS_PORT', 6379)),
-                password=os.getenv('_REDIS_PASSWORD'),  # Required for production
+                host=os.getenv('REDIS_HOST', 'localhost'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                password=os.getenv('REDIS_PASSWORD'),  # Required for production
                 db=0,
                 decode_responses=True,
                 ssl=True if os.getenv('REDIS_SSL', 'false').lower() == 'true' else False,
