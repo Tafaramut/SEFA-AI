@@ -21,10 +21,13 @@ class RedisService:
         """
         try:
             # Get Redis configuration from environment variables
-            redis_host = os.getenv('REDIS_HOST', 'localhost')
-            redis_port = int(os.getenv('REDIS_PORT', 6379))
-            redis_password = os.getenv('REDIS_PASSWORD')
-            redis_ssl = os.getenv('REDIS_SSL', 'false').lower() == 'true'
+            # Fallback to Redis Cloud if no env vars are set (for production)
+            redis_host = os.getenv('REDIS_HOST', 'redis-11065.c327.europe-west1-2.gce.redns.redis-cloud.com')
+            redis_port = int(os.getenv('REDIS_PORT', 11065))
+            redis_password = os.getenv('REDIS_PASSWORD', 'CYeBkT1k99vrTWP6gtMClQynzgBlH1eL')
+            redis_ssl = os.getenv('REDIS_SSL', 'true').lower() == 'true'
+
+            logger.info(f"Connecting to Redis at {redis_host}:{redis_port} (SSL: {redis_ssl})")
 
             # Base connection parameters
             connection_params = {
