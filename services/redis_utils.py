@@ -97,31 +97,70 @@ class RedisService:
         """Store complete user session in Redis with atomic operations"""
 
         def _save():
+            if not session_data:
+                logger.warning(f"No session data provided for user {user_id}")
+                return None
+
+            # DEBUG: Log what we're trying to save
+            logger.info(f"🔍 DEBUG - Attempting to save session for user {user_id}")
+            logger.info(f"🔍 DEBUG - Session data keys: {list(session_data.keys())}")
+
+            # Check each field for None values
+            for key, value in session_data.items():
+                if value is None:
+                    logger.warning(f"🚨 DEBUG - Found None value in field '{key}' for user {user_id}")
+                else:
+                    logger.info(
+                        f"✅ DEBUG - Field '{key}': type={type(value).__name__}, value_preview={str(value)[:100]}...")
+
             # Create a deep copy to avoid modifying the original
             data_to_store = session_data.copy()
 
-            # Convert specific fields to JSON strings
-            for field in ['history', 'current', 'payment_step']:
-                if field in data_to_store and data_to_store[field] is not None:
+            # Remove None values and convert others to proper types
+            cleaned_data = {}
+            for key, value in data_to_store.items():
+                if value is None:
+                    logger.warning(f"🚨 Skipping None value for field '{key}' (user: {user_id})")
+                    continue
+
+                # Convert specific fields to JSON strings
+                if key in ['history', 'current', 'payment_step']:
                     try:
-                        data_to_store[field] = json.dumps(data_to_store[field])
+                        cleaned_data[key] = json.dumps(value)
+                        logger.info(f"✅ Serialized field '{key}' to JSON")
                     except (TypeError, ValueError) as e:
-                        logger.error(f"Failed to serialize {field}: {str(e)}")
-                        del data_to_store[field]  # Remove problematic field
+                        logger.error(f"❌ Failed to serialize {key}: {str(e)}")
+                        continue  # Skip this field
+                else:
+                    # Convert all other values to strings to ensure Redis compatibility
+                    try:
+                        cleaned_data[key] = str(value)
+                        logger.info(f"✅ Converted field '{key}' to string")
+                    except (TypeError, ValueError) as e:
+                        logger.error(f"❌ Failed to convert {key} to string: {str(e)}")
+                        continue  # Skip this field
+
+            if not cleaned_data:
+                logger.warning(f"🚨 No valid data to store for user {user_id} after cleaning")
+                return None
+
+            logger.info(f"✅ Cleaned data fields for user {user_id}: {list(cleaned_data.keys())}")
 
             # Set expiration if specified
             pipeline = self.redis_client.pipeline()
-            if 'payment_expiry' in data_to_store:
+            if 'payment_expiry' in cleaned_data:
                 try:
                     expiry = int((datetime.now() + timedelta(days=30)).timestamp())
-                    data_to_store['payment_expiry'] = str(expiry)
+                    cleaned_data['payment_expiry'] = str(expiry)
                     pipeline.expireat(f"user:{user_id}", expiry)
                 except (ValueError, TypeError) as e:
                     logger.error(f"Invalid payment expiry: {str(e)}")
-                    del data_to_store['payment_expiry']
+                    del cleaned_data['payment_expiry']
 
-            pipeline.hset(f"user:{user_id}", mapping=data_to_store)
-            return pipeline.execute()
+            pipeline.hset(f"user:{user_id}", mapping=cleaned_data)
+            result = pipeline.execute()
+            logger.info(f"✅ Successfully saved session for user {user_id}")
+            return result
 
         return self._safe_operation(_save)
 
@@ -149,16 +188,43 @@ class RedisService:
         """Atomic operation to add conversation history"""
 
         def _add():
+            # DEBUG: Log what we're trying to add
+            logger.info(f"🔍 DEBUG - Adding to conversation history:")
+            logger.info(f"🔍 DEBUG - user_id: {user_id} (type: {type(user_id).__name__})")
+            logger.info(f"🔍 DEBUG - role: {role} (type: {type(role).__name__})")
+            logger.info(f"🔍 DEBUG - message: {str(message)[:200]}... (type: {type(message).__name__})")
+
+            if not user_id or not role or not message:
+                logger.warning(
+                    f"🚨 Invalid parameters for conversation history: user_id={user_id}, role={role}, message={message}")
+                return None
+
+            # Check for None values specifically
+            if user_id is None:
+                logger.error(f"🚨 user_id is None!")
+                return None
+            if role is None:
+                logger.error(f"🚨 role is None!")
+                return None
+            if message is None:
+                logger.error(f"🚨 message is None!")
+                return None
+
             history_key = f"conversation:{user_id}"
             message_entry = json.dumps({
-                "role": role,
-                "message": message,
+                "role": str(role),
+                "message": str(message),
                 "timestamp": datetime.now().isoformat()
             })
+
+            logger.info(f"✅ Adding conversation entry for user {user_id}")
+
             with self.redis_client.pipeline() as pipe:
                 pipe.lpush(history_key, message_entry)
                 pipe.ltrim(history_key, 0, 19)  # Keep last 20 messages
-                pipe.execute()
+                result = pipe.execute()
+                logger.info(f"✅ Successfully added conversation history for user {user_id}")
+                return result
 
         return self._safe_operation(_add)
 
