@@ -82,7 +82,7 @@ pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
 pyzmq==26.4.0
-redis==5.2.1
+redis==6.2.0
 referencing==0.36.2
 requests==2.32.3
 rpds-py==0.24.0

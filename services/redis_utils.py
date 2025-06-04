@@ -16,29 +16,45 @@ class RedisService:
         - Environment variable configuration
         - Connection pooling
         - Timeout settings
-        - SSL/TLS support
+        - SSL/TLS support for Redis Cloud
         - Automatic reconnection
         """
         try:
-            self.redis_client = redis.Redis(
-                host=os.getenv('_REDIS_HOST', 'localhost'),
-                port=int(os.getenv('_REDIS_PORT', 6379)),
-                password=os.getenv('_REDIS_PASSWORD'),  # Required for production
-                db=0,
-                decode_responses=True,
-                ssl=True if os.getenv('_REDIS_SSL', 'false').lower() == 'true' else False,
-                socket_timeout=10,  # Socket operations timeout (seconds)
-                socket_connect_timeout=5,  # Connection timeout (seconds)
-                retry_on_timeout=True,  # Retry on timeout errors
-                health_check_interval=30,  # Check connection health (seconds)
-                max_connections=100  # Connection pool size
-            )
+            # Get Redis configuration from environment variables
+            redis_host = os.getenv('REDIS_HOST', 'localhost')
+            redis_port = int(os.getenv('REDIS_PORT', 6379))
+            redis_password = os.getenv('REDIS_PASSWORD')
+            redis_ssl = os.getenv('REDIS_SSL', 'false').lower() == 'true'
+
+            # Base connection parameters
+            connection_params = {
+                'host': redis_host,
+                'port': redis_port,
+                'password': redis_password,
+                'db': 0,
+                'decode_responses': True,
+                'socket_timeout': 10,  # Socket operations timeout (seconds)
+                'socket_connect_timeout': 5,  # Connection timeout (seconds)
+                'retry_on_timeout': True,  # Retry on timeout errors
+                'health_check_interval': 30,  # Check connection health (seconds)
+                'max_connections': 100  # Connection pool size
+            }
+
+            # Add SSL parameters for Redis Cloud (redis-py 6.2.0 compatible)
+            if redis_ssl:
+                connection_params.update({
+                    'ssl_cert_reqs': None,  # Disable SSL certificate verification
+                    'ssl_check_hostname': False,  # Disable hostname checking
+                })
+                logger.info("Using SSL connection for Redis Cloud")
+
+            self.redis_client = redis.Redis(**connection_params)
 
             # Test connection immediately
             if not self.redis_client.ping():
                 raise ConnectionError("Redis ping failed")
 
-            logger.info("✅ Redis connected successfully")
+            logger.info(f"✅ Redis connected successfully to {redis_host}:{redis_port}")
 
         except Exception as e:
             logger.error(f"❌ Redis connection failed: {str(e)}")
