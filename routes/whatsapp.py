@@ -15,6 +15,7 @@ payment_service = PaymentService()
 def clean_response(text):
     text = re.sub(r'[#*_`]+', '', text)
     return text.strip()
+
 # Add these endpoints to your main Flask app (where you have the /whatsapp route):
 
 @whatsapp_bp.route('/return-url', methods=['POST', 'GET'])
@@ -87,6 +88,10 @@ def whatsapp_webhook():
                 send_whatsapp_message(sender_number, "You're already at the beginning. Type 'Start Over' to restart.")
                 return jsonify({"status": "no_previous_state"}), 200
 
+        # Get current state from session - MOVED THIS UP
+        current_state = session.get("current", conversation_tree["hi"])
+        history = session.get("history", [])
+
         # Check if in payment flow
         if "payment_step" in session:
             payment_result = payment_service.handle_payment_flow(sender_number, sender_name, user_message)
@@ -98,10 +103,6 @@ def whatsapp_webhook():
 
         # Skip payment flow if user is already paid
         if session.get("is_paid"):
-            # Continue with the conversation
-            current_state = session["current"]
-            history = session.get("history", [])
-
             # Check for next keyword matches in conversation tree
             keyword_matched = False
             if "next" in current_state:
@@ -111,6 +112,7 @@ def whatsapp_webhook():
                         next_state = next_steps[keyword]
                         history.append(current_state)
                         session["current"] = next_state
+                        session["history"] = history
                         session["last_template"] = next_state.get("template_sid")
                         redis_service.save_user_session(sender_number, session)
 
