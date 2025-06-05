@@ -15,7 +15,23 @@ payment_service = PaymentService()
 def clean_response(text):
     text = re.sub(r'[#*_`]+', '', text)
     return text.strip()
+# Add these endpoints to your main Flask app (where you have the /whatsapp route):
 
+@whatsapp_bp.route('/return-url', methods=['POST', 'GET'])
+def paynow_return():
+    """Handle Paynow return callback - when user completes/cancels payment"""
+    print(f"Paynow return callback: {request.form}")
+    print(f"Paynow return args: {request.args}")
+    # You can process the return data here if needed
+    return "Payment return processed", 200
+
+@whatsapp_bp.route('/result-url', methods=['POST', 'GET'])
+def paynow_result():
+    """Handle Paynow result callback - payment status updates"""
+    print(f"Paynow result callback: {request.form}")
+    print(f"Paynow result args: {request.args}")
+    # You can process the result data here if needed
+    return "Payment result processed", 200
 
 @whatsapp_bp.route('/whatsapp', methods=['POST'])
 def whatsapp_webhook():

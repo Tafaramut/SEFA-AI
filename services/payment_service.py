@@ -8,13 +8,14 @@ from services.twilio_messaging import send_whatsapp_message
 
 
 class PaymentService:
+
     def __init__(self):
         self.redis_service = RedisService()
         self.paynow = Paynow(
             '20700',
             '3741f3f9-dcdb-4424-9f14-049b740fe7c6',
-            'https://yourdomain.com/return-url',
-            'https://yourdomain.com/cancel-url'
+            'https://sefai-695944432692.europe-west1.run.app/return-url',
+            'https://sefai-695944432692.europe-west1.run.app/result-url'
         )
 
     def validate_ecocash_number(self, number: str) -> bool:
