@@ -5,7 +5,7 @@ import time
 import threading
 from services.redis_utils import RedisService
 from services.twilio_messaging import send_whatsapp_message
-
+import logging
 
 class PaymentService:
 
@@ -19,18 +19,15 @@ class PaymentService:
         )
 
     def validate_ecocash_number(self, number: str) -> bool:
-        """Validate Zimbabwean EcoCash number format."""
         return (number.isdigit() and len(number) == 10
                 and number.startswith(('077', '078', '071')))
 
     def poll_and_notify_user(self, sender_number: str, poll_url: str):
-        """Polls payment status and sends result to user via WhatsApp."""
         for _ in range(12):  # 2 minutes max (12 x 10 sec)
             status = self.paynow.check_transaction_status(poll_url)
 
             if status.paid:
                 message = "✅ *Payment successful!* Thank you for your purchase. You now have full access for 30 days."
-                # Update user session with payment expiry
                 session = self.redis_service.get_user_session(sender_number) or {}
                 session['payment_expiry'] = str((datetime.now() + timedelta(days=30)).timestamp())
                 self.redis_service.save_user_session(sender_number, session)
@@ -51,7 +48,6 @@ class PaymentService:
         send_whatsapp_message(sender_number, message)
 
     def handle_payment_flow(self, sender_number: str, sender_name: str, user_message: str) -> dict:
-        """Main payment flow handler that manages the state machine."""
         session = self.redis_service.get_user_session(sender_number) or {}
         step = session.get("payment_step")
 
@@ -63,7 +59,6 @@ class PaymentService:
             return self._start_payment_flow(sender_number, user_message, session)
 
     def _handle_awaiting_number(self, sender_number: str, user_message: str, session: dict) -> dict:
-        """Handle the number collection step."""
         if self.validate_ecocash_number(user_message):
             session.update({
                 "payment_phone": user_message,
@@ -81,29 +76,27 @@ class PaymentService:
         return {"status": "invalid_number"}
 
     def initiate_payment(self, sender_number: str, ecocash_number: str, amount: float = 0.10) -> dict:
-        """Initiate a Paynow payment and return status."""
         try:
-            payment = self.paynow.create_payment('WhatsApp Subscription', f'{sender_number}@yourapp.com')
+            payment = self.paynow.create_payment('WhatsApp Subscription', f'josephmutswe@gmail.com')
             payment.add('1 Month Access', amount)
 
             response = self.paynow.send_mobile(payment, ecocash_number, 'ecocash')
 
             if response.success:
-                # Start polling in background
                 threading.Thread(
                     target=self.poll_and_notify_user,
                     args=(sender_number, response.poll_url)
                 ).start()
                 return {"status": "success", "poll_url": response.poll_url}
 
-            # Make sure we always return a string error message
             error_msg = str(response.error) if hasattr(response, 'error') else "Payment failed"
+            logging.error(f"Payment initiation failed: {error_msg}")
             return {"status": "failed", "error": error_msg}
         except Exception as e:
+            logging.exception("Exception occurred during payment initiation")
             return {"status": "failed", "error": str(e)}
 
     def _handle_awaiting_confirmation(self, sender_number: str, user_message: str, session: dict) -> dict:
-        """Handle the payment confirmation step."""
         if user_message.lower() == 'yes':
             payment_result = self.initiate_payment(
                 sender_number,
@@ -115,13 +108,11 @@ class PaymentService:
                                       f"✅ Payment request sent to {session['payment_phone']} "
                                       "via EcoCash.\nPlease complete the payment on your phone.")
 
-                # Clear payment state but keep pending question
                 session.pop("payment_step", None)
                 session.pop("payment_phone", None)
                 self.redis_service.save_user_session(sender_number, session)
                 return {"status": "payment_initiated"}
 
-            # Now we know error will always exist and be a string
             send_whatsapp_message(sender_number,
                                   f"❌ Failed to initiate payment: {payment_result['error']}\n"
                                   "Please try again or contact support.")
@@ -139,7 +130,6 @@ class PaymentService:
         return {"status": "invalid_confirmation"}
 
     def _start_payment_flow(self, sender_number: str, user_message: str, session: dict) -> dict:
-        """Initialize the payment flow."""
         session.update({
             "payment_step": "awaiting_number",
             "pending_question": user_message
