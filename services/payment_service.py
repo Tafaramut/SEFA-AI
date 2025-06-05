@@ -30,7 +30,13 @@ class PaymentService:
                 message = "✅ *Payment successful!* Thank you for your purchase. You now have full access for 30 days."
                 session = self.redis_service.get_user_session(sender_number) or {}
                 session['payment_expiry'] = str((datetime.now() + timedelta(days=30)).timestamp())
-                self.redis_service.save_user_session(sender_number, session)
+                session.pop("payment_step", None)  # Clear payment step
+                session.pop("payment_phone", None)  # Clear payment phone
+                session["is_paid"] = True  # Set paid flag
+                self.redis_service.save_user_session(sender_number, session)  # Save the updated session
+
+                # Send confirmation message to user
+                send_whatsapp_message(sender_number, message)
                 break
             elif status.status == 'cancelled':
                 message = "❌ *Payment cancelled.*"
