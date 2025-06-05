@@ -96,10 +96,10 @@ def whatsapp_webhook():
                 if payment_result["status"] == "payment_failed":
                     return jsonify(payment_result), 200
 
-        # Skip payment flow if user is already paid
+        # Check if user is already paid
         if session.get("is_paid"):
             # Continue with the conversation
-            current_state = session["current"]
+            current_state = session["current"]  # Make sure current_state is defined
             history = session.get("history", [])
 
             # Check for next keyword matches in conversation tree
@@ -118,7 +118,7 @@ def whatsapp_webhook():
                         keyword_matched = True
                         return jsonify({"status": "template_sent"}), 200
 
-            # If no keyword match, handle free-form input
+            # Handle free-form input if no keywords matched
             if not keyword_matched:
                 history_messages = redis_service.get_conversation_history(sender_number)
                 gemini_response = generate_gemini_response(user_message, history_messages)
@@ -136,8 +136,8 @@ def whatsapp_webhook():
                 send_template_message(sender_number, sender_name, "HX9a38645ef48259d6bb3556f74236e980")
                 return jsonify({"status": "awaiting_payment_method"}), 200
 
-            # PAYMENT TRIGGER 2: End of conversation tree (no more templates)
-            elif "next" not in current_state or not current_state["next"]:
+            # PAYMENT TRIGGER 2: End of conversation tree
+            elif "next" not in session["current"] or not session["current"].get("next"):
                 session["payment_step"] = "awaiting_number"
                 session["pending_question"] = incoming_message
                 redis_service.save_user_session(sender_number, session)
