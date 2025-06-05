@@ -22,25 +22,6 @@ class PaymentService:
         return (number.isdigit() and len(number) == 10
                 and number.startswith(('077', '078', '071')))
 
-    def initiate_payment(self, sender_number: str, ecocash_number: str, amount: float = 0.10) -> dict:
-        """Initiate a Paynow payment and return status."""
-        try:
-            payment = self.paynow.create_payment('WhatsApp Subscription', f'{sender_number}@yourapp.com')
-            payment.add('1 Month Access', amount)
-
-            response = self.paynow.send_mobile(payment, ecocash_number, 'ecocash')
-
-            if response.success:
-                # Start polling in background
-                threading.Thread(
-                    target=self.poll_and_notify_user,
-                    args=(sender_number, response.poll_url)
-                ).start()
-                return {"status": "success", "poll_url": response.poll_url}
-            return {"status": "failed", "error": response.error}
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-
     def poll_and_notify_user(self, sender_number: str, poll_url: str):
         """Polls payment status and sends result to user via WhatsApp."""
         for _ in range(12):  # 2 minutes max (12 x 10 sec)
@@ -98,6 +79,28 @@ class PaymentService:
                               "❌ Invalid number. Enter a valid Zimbabwean EcoCash number (e.g., 0771234567):")
         return {"status": "invalid_number"}
 
+    def initiate_payment(self, sender_number: str, ecocash_number: str, amount: float = 0.10) -> dict:
+        """Initiate a Paynow payment and return status."""
+        try:
+            payment = self.paynow.create_payment('WhatsApp Subscription', f'{sender_number}@yourapp.com')
+            payment.add('1 Month Access', amount)
+
+            response = self.paynow.send_mobile(payment, ecocash_number, 'ecocash')
+
+            if response.success:
+                # Start polling in background
+                threading.Thread(
+                    target=self.poll_and_notify_user,
+                    args=(sender_number, response.poll_url)
+                ).start()
+                return {"status": "success", "poll_url": response.poll_url}
+
+            # Make sure we always return a string error message
+            error_msg = str(response.error) if hasattr(response, 'error') else "Payment failed"
+            return {"status": "failed", "error": error_msg}
+        except Exception as e:
+            return {"status": "failed", "error": str(e)}
+
     def _handle_awaiting_confirmation(self, sender_number: str, user_message: str, session: dict) -> dict:
         """Handle the payment confirmation step."""
         if user_message.lower() == 'yes':
@@ -117,6 +120,7 @@ class PaymentService:
                 self.redis_service.save_user_session(sender_number, session)
                 return {"status": "payment_initiated"}
 
+            # Now we know error will always exist and be a string
             send_whatsapp_message(sender_number,
                                   f"❌ Failed to initiate payment: {payment_result['error']}\n"
                                   "Please try again or contact support.")
